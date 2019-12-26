@@ -76,9 +76,9 @@ namespace Abp.Mqtt
             if (uri.UserInfo?.Any() == true)
             {
                 var userInfo = uri.UserInfo.Split(':');
-                var clientId = userInfo[0];
+                var username = userInfo[0];
                 var password = userInfo.Length > 1 ? userInfo[1] : "";
-                builder.WithCredentials(clientId, password);
+                builder.WithCredentials(username, password);
             }
             foreach (var configure in _clientConfigurators)
             {

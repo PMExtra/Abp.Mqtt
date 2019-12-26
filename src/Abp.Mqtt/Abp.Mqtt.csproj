@@ -5,7 +5,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Abp" Version="5.1.0" />
+    <PackageReference Include="Abp" Version="4.9.0" />
     <PackageReference Include="MQTTnet.NETStandard" Version="3.0.8" />
   </ItemGroup>
 
