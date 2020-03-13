@@ -17,13 +17,11 @@ namespace Abp.Mqtt.Serialization
 
             if (IsSimpleType(payload.GetType())) payload = BsonDataWrapper.Wrap(payload);
 
-            using (var ms = new MemoryStream())
-            using (var writer = new BsonDataWriter(ms))
-            {
-                var serializer = new JsonSerializer();
-                serializer.Serialize(writer, payload);
-                return ms.ToArray();
-            }
+            using var ms = new MemoryStream();
+            using var writer = new BsonDataWriter(ms);
+            var serializer = new JsonSerializer();
+            serializer.Serialize(writer, payload);
+            return ms.ToArray();
         }
 
         public virtual T Deserialize<T>(byte[] payload)
@@ -32,12 +30,10 @@ namespace Abp.Mqtt.Serialization
 
             if (IsSimpleType(typeof(T))) return (T) Deserialize(payload, typeof(T));
 
-            using (var ms = new MemoryStream(payload))
-            using (var reader = new BsonDataReader(ms))
-            {
-                var serializer = new JsonSerializer();
-                return serializer.Deserialize<T>(reader);
-            }
+            using var ms = new MemoryStream(payload);
+            using var reader = new BsonDataReader(ms);
+            var serializer = new JsonSerializer();
+            return serializer.Deserialize<T>(reader);
         }
 
         public object Deserialize(byte[] payload, Type type)
@@ -47,20 +43,18 @@ namespace Abp.Mqtt.Serialization
             var isSimpleType = IsSimpleType(type);
             if (isSimpleType) type = typeof(BsonDataWrapper<>).MakeGenericType(type);
 
-            using (var ms = new MemoryStream(payload))
-            using (var reader = new BsonDataReader(ms))
+            using var ms = new MemoryStream(payload);
+            using var reader = new BsonDataReader(ms);
+            var serializer = new JsonSerializer();
+            var data = serializer.Deserialize(reader, type);
+            if (isSimpleType)
             {
-                var serializer = new JsonSerializer();
-                var data = serializer.Deserialize(reader, type);
-                if (isSimpleType)
-                {
-                    var property = type.GetProperty("Data");
-                    Debug.Assert(property != null, nameof(property) + " != null");
-                    data = property.GetValue(data);
-                }
-
-                return data;
+                var property = type.GetProperty("Data");
+                Debug.Assert(property != null, nameof(property) + " != null");
+                data = property.GetValue(data);
             }
+
+            return data;
         }
 
         private bool IsSimpleType(Type type)

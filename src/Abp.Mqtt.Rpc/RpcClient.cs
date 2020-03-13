@@ -85,33 +85,31 @@ namespace Abp.Mqtt.Rpc
 
                 await _mqttClient.PublishAsync(requestMessage).ConfigureAwait(false);
 
-                using (var timeoutCts = new CancellationTokenSource(timeout))
-                using (var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token))
+                using var timeoutCts = new CancellationTokenSource(timeout);
+                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+                linkedCts.Token.Register(() =>
                 {
-                    linkedCts.Token.Register(() =>
+                    if (!tcs.Task.IsCompleted && !tcs.Task.IsFaulted && !tcs.Task.IsCanceled)
                     {
-                        if (!tcs.Task.IsCompleted && !tcs.Task.IsFaulted && !tcs.Task.IsCanceled)
-                        {
-                            tcs.TrySetCanceled();
-                        }
-                    });
-
-                    try
-                    {
-                        var result = await tcs.Task.ConfigureAwait(false);
-                        timeoutCts.Cancel(false);
-                        return result;
+                        tcs.TrySetCanceled();
                     }
-                    catch (OperationCanceledException exception)
+                });
+
+                try
+                {
+                    var result = await tcs.Task.ConfigureAwait(false);
+                    timeoutCts.Cancel(false);
+                    return result;
+                }
+                catch (OperationCanceledException exception)
+                {
+                    if (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
                     {
-                        if (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
-                        {
-                            throw new MqttCommunicationTimedOutException(exception);
-                        }
-                        else
-                        {
-                            throw;
-                        }
+                        throw new MqttCommunicationTimedOutException(exception);
+                    }
+                    else
+                    {
+                        throw;
                     }
                 }
             }

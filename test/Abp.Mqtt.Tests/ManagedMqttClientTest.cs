@@ -7,8 +7,9 @@ namespace Abp.Mqtt.Tests
 {
     public class ManagedMqttClientTest : IDisposable
     {
-        private const string MqttServer = "mqtt://localhost";
+        private const string MqttServer = "mqtt://test01:123@192.168.102.101";
 
+        private const string MsId = "test01";
         private readonly IIocManager _iocManagerA;
         private readonly IIocManager _iocManagerB;
         private readonly IManagedMqttClient _clientA;

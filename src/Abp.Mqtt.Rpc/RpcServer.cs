@@ -167,79 +167,75 @@ namespace Abp.Mqtt.Rpc
                 args = new[] { _serializer.Deserialize(message.Payload, parameterInfo.ParameterType) };
             }
 
-            using (var serviceScope = _serviceProvider.CreateScope())
+            using var serviceScope = _serviceProvider.CreateScope();
+            using var cts = string.IsNullOrEmpty(timeout) ? new CancellationTokenSource() : new CancellationTokenSource(int.Parse(timeout));
+            try
             {
-                using (var cts = string.IsNullOrEmpty(timeout) ? new CancellationTokenSource() : new CancellationTokenSource(int.Parse(timeout)))
+                var rpcService = serviceScope.ServiceProvider.GetService(method.DeclaringType);
+
+                var task = Task.Run(async () =>
                 {
-                    try
+                    var returnValue = method.Invoke(rpcService, args);
+                    if (returnValue is Task t)
                     {
-                        var rpcService = serviceScope.ServiceProvider.GetService(method.DeclaringType);
-
-                        var task = Task.Run(async () =>
+                        await t.ConfigureAwait(false);
+                        if (t.GetType().IsGenericType)
                         {
-                            var returnValue = method.Invoke(rpcService, args);
-                            if (returnValue is Task t)
-                            {
-                                await t.ConfigureAwait(false);
-                                if (t.GetType().IsGenericType)
-                                {
-                                    var resultProperty = t.GetType().GetProperty("Result");
-                                    Debug.Assert(resultProperty != null);
-                                    returnValue = resultProperty.GetValue(t);
-                                }
-                            }
-                            return returnValue;
-                        }, cts.Token);
-
-                        if (!string.IsNullOrEmpty(id))
-                        {
-                            if (!_waitingCalls.TryAdd(id, new TaskInfo(task, cts)))
-                            {
-                                throw new InvalidOperationException();
-                            }
-                        }
-                        else
-                        {
-                            _noIdCalls.TryAdd(cts, task);
-                        }
-
-                        var result = await task;
-
-                        if (string.IsNullOrEmpty(id)) return;
-
-                        var response = new MqttApplicationMessageBuilder()
-                            .WithTopic(GetResponseTopic(GetSource(message.Topic)))
-                            .WithUserProperty("Id", id)
-                            .WithUserProperty("Success", true.ToString())
-                            .WithContentType(_serializer.ContentType)
-                            .WithPayload(_serializer.Serialize(result))
-                            .WithAtLeastOnceQoS()
-                            .Build();
-                        await _mqttClient.PublishAsync(response).ConfigureAwait(false);
-                    }
-                    catch (Exception ex)
-                    {
-                        if (string.IsNullOrEmpty(id)) return;
-                        var response = new MqttApplicationMessageBuilder()
-                            .WithTopic(GetResponseTopic(GetSource(message.Topic)))
-                            .WithUserProperty("Id", id)
-                            .WithUserProperty("Success", false.ToString())
-                            .WithUserProperty("Message", ex.Message)
-                            .WithAtLeastOnceQoS()
-                            .Build();
-                        await _mqttClient.PublishAsync(response).ConfigureAwait(false);
-                    }
-                    finally
-                    {
-                        if (!string.IsNullOrEmpty(id))
-                        {
-                            _waitingCalls.TryRemove(id, out _);
-                        }
-                        else
-                        {
-                            _noIdCalls.TryRemove(cts, out _);
+                            var resultProperty = t.GetType().GetProperty("Result");
+                            Debug.Assert(resultProperty != null);
+                            returnValue = resultProperty.GetValue(t);
                         }
                     }
+                    return returnValue;
+                }, cts.Token);
+
+                if (!string.IsNullOrEmpty(id))
+                {
+                    if (!_waitingCalls.TryAdd(id, new TaskInfo(task, cts)))
+                    {
+                        throw new InvalidOperationException();
+                    }
+                }
+                else
+                {
+                    _noIdCalls.TryAdd(cts, task);
+                }
+
+                var result = await task;
+
+                if (string.IsNullOrEmpty(id)) return;
+
+                var response = new MqttApplicationMessageBuilder()
+                    .WithTopic(GetResponseTopic(GetSource(message.Topic)))
+                    .WithUserProperty("Id", id)
+                    .WithUserProperty("Success", true.ToString())
+                    .WithContentType(_serializer.ContentType)
+                    .WithPayload(_serializer.Serialize(result))
+                    .WithAtLeastOnceQoS()
+                    .Build();
+                await _mqttClient.PublishAsync(response).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                if (string.IsNullOrEmpty(id)) return;
+                var response = new MqttApplicationMessageBuilder()
+                    .WithTopic(GetResponseTopic(GetSource(message.Topic)))
+                    .WithUserProperty("Id", id)
+                    .WithUserProperty("Success", false.ToString())
+                    .WithUserProperty("Message", ex.Message)
+                    .WithAtLeastOnceQoS()
+                    .Build();
+                await _mqttClient.PublishAsync(response).ConfigureAwait(false);
+            }
+            finally
+            {
+                if (!string.IsNullOrEmpty(id))
+                {
+                    _waitingCalls.TryRemove(id, out _);
+                }
+                else
+                {
+                    _noIdCalls.TryRemove(cts, out _);
                 }
             }
         }
