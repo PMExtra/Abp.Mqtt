@@ -42,6 +42,7 @@ namespace Abp.Mqtt.Service.Test
                     builder.WithAutoReconnectDelay(TimeSpan.FromSeconds(5));
                 });
 
+
             services
                 .AddMqttRpcServer<RpcServer>()
                 .AddSerializer<BsonMessageSerializer>()

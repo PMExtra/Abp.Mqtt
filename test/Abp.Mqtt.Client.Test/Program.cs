@@ -23,20 +23,20 @@ namespace Abp.Mqtt.Client.Test
 
 
 
-            int requestType = 2;
+            int requestType = 1;
 
             do
             {
 
                 Console.WriteLine("plase press any key contine exit step ...");
-                Console.Read();
+                Console.ReadKey();
 
                 try
                 {
 
                     if (requestType == 1)
                     {
-                        int parallel = 16;
+                        int parallel = 2;
 
                         var period = TimeSpan.FromMinutes(1);
 
@@ -44,7 +44,7 @@ namespace Abp.Mqtt.Client.Test
 
                         var success = 0;
                         var failed = 0;
-
+                        var id = 0;
                         var client = _serviceProvider.GetRequiredService<RpcClient>();
 
                         using (var cts = new CancellationTokenSource(period))
@@ -56,10 +56,15 @@ namespace Abp.Mqtt.Client.Test
                                 {
                                     try
                                     {
-                                        var pong = await client.ExecuteAsync<string>("Ping", "Ping", MqttQualityOfServiceLevel.ExactlyOnce, TimeSpan.FromSeconds(1), packerId,
+                                        var beginDate = DateTime.Now;
+                                       
+                                        var pong = await client.ExecuteAsync<string>("Ping", "Ping", MqttQualityOfServiceLevel.ExactlyOnce, TimeSpan.FromMinutes(1), packerId,
                                             cts.Token);
                                         if (pong == "Pong")
                                         {
+                                            var endDate = DateTime.Now;
+                                            Console.WriteLine(" "+beginDate.ToString("HH:mm:ss.fff")+" -> "+ endDate.ToString(endDate.ToString("HH:mm:ss.fff")));
+
                                             Interlocked.Increment(ref success);
                                         }
                                         else
