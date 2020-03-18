@@ -1,0 +1,3 @@
+[submodule "lib/MQTTnet"]
+	path = lib/MQTTnet
+	url = https://github.com/PMExtra/MQTTnet.git

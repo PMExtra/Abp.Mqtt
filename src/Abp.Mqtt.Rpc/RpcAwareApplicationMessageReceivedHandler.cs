@@ -21,10 +21,7 @@ namespace Abp.Mqtt.Rpc
 
         public async Task HandleApplicationMessageReceivedAsync(MqttApplicationMessageReceivedEventArgs eventArgs)
         {
-            if (OriginalHandler != null)
-            {
-                await OriginalHandler.HandleApplicationMessageReceivedAsync(eventArgs).ConfigureAwait(false);
-            }
+            if (OriginalHandler != null) await OriginalHandler.HandleApplicationMessageReceivedAsync(eventArgs).ConfigureAwait(false);
 
             await _handleReceivedApplicationMessageAsync(eventArgs).ConfigureAwait(false);
         }

@@ -1,42 +1,37 @@
-using Microsoft.Extensions.DependencyInjection;
 using System;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Abp.Mqtt.Rpc;
 using Abp.Mqtt.Serialization;
+using Microsoft.Extensions.DependencyInjection;
 using MQTTnet.Formatter;
-using System.Threading;
-using System.Linq;
-using System.Threading.Tasks;
 using MQTTnet.Protocol;
 
 namespace Abp.Mqtt.Client.Test
 {
-    class Program
+    internal class Program
     {
         private static IServiceProvider _serviceProvider;
-        private static string mqttService = "mqtt://packer01:123qwe@192.168.102.101";
+        private static readonly string mqttService = "mqtt://packer01:123qwe@192.168.102.101";
 
-        static async Task Main(string[] args)
+        private static async Task Main(string[] args)
         {
-
-
             _serviceProvider = ConfigureServices(new ServiceCollection()).BuildServiceProvider();
 
 
-
-            int requestType = 2;
+            var requestType = 1;
 
             do
             {
-
                 Console.WriteLine("plase press any key contine exit step ...");
-                Console.Read();
+                Console.ReadKey();
 
                 try
                 {
-
                     if (requestType == 1)
                     {
-                        int parallel = 16;
+                        var parallel = 2;
 
                         var period = TimeSpan.FromMinutes(1);
 
@@ -44,22 +39,25 @@ namespace Abp.Mqtt.Client.Test
 
                         var success = 0;
                         var failed = 0;
-
+                        var id = 0;
                         var client = _serviceProvider.GetRequiredService<RpcClient>();
 
                         using (var cts = new CancellationTokenSource(period))
                         {
-
                             var tasks = Enumerable.Range(0, parallel).Select(async _ =>
                             {
                                 while (!cts.Token.IsCancellationRequested)
-                                {
                                     try
                                     {
-                                        var pong = await client.ExecuteAsync<string>("Ping", "Ping", MqttQualityOfServiceLevel.ExactlyOnce, TimeSpan.FromSeconds(1), packerId,
+                                        var beginDate = DateTime.Now;
+
+                                        var pong = await client.ExecuteAsync<string>("Ping", "Ping", MqttQualityOfServiceLevel.ExactlyOnce, TimeSpan.FromMinutes(1), packerId,
                                             cts.Token);
                                         if (pong == "Pong")
                                         {
+                                            var endDate = DateTime.Now;
+                                            Console.WriteLine(" " + beginDate.ToString("HH:mm:ss.fff") + " -> " + endDate.ToString(endDate.ToString("HH:mm:ss.fff")));
+
                                             Interlocked.Increment(ref success);
                                         }
                                         else
@@ -71,7 +69,6 @@ namespace Abp.Mqtt.Client.Test
                                     {
                                         Interlocked.Increment(ref failed);
                                     }
-                                }
                             }).ToList();
                             await Task.WhenAll(tasks);
                         }
@@ -93,24 +90,16 @@ namespace Abp.Mqtt.Client.Test
                 {
                     Console.WriteLine(ex.Message);
                 }
-
             } while (true);
 
             Console.Read();
-
         }
 
         private static IServiceCollection ConfigureServices(IServiceCollection services)
         {
             services.AddMqtt(mqttService)
-                .ConfigureClient(builder =>
-                {
-                    builder.WithProtocolVersion(MqttProtocolVersion.V500);
-                })
-                .ConfigureManagedClient(builder =>
-                {
-                    builder.WithAutoReconnectDelay(TimeSpan.FromSeconds(5));
-                });
+                .ConfigureClient(builder => { builder.WithProtocolVersion(MqttProtocolVersion.V500); })
+                .ConfigureManagedClient(builder => { builder.WithAutoReconnectDelay(TimeSpan.FromSeconds(5)); });
 
             services.AddMqttRpcClient().AddSerializer<BsonMessageSerializer>();
 

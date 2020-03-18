@@ -15,12 +15,6 @@ namespace Abp.Mqtt.Rpc
             _serviceCollection = serviceCollection;
         }
 
-        public RpcServerBuilder AddSerializer<T>() where T : IMessageSerializer
-        {
-            _serviceCollection.Replace(ServiceDescriptor.Transient(typeof(IMessageSerializer), typeof(T)));
-            return this;
-        }
-
         public RpcServerBuilder AddService<TService>() where TService : class, IRpcService
         {
             _serviceCollection.AddTransient(typeof(IRpcService), typeof(TService));

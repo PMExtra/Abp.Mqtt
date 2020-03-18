@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -15,13 +16,15 @@ namespace Abp.Mqtt.Rpc
     {
         private readonly RpcAwareApplicationMessageReceivedHandler _applicationMessageReceivedHandler;
         private readonly IManagedMqttClient _mqttClient;
-        private readonly IMessageSerializer _serializer;
-        private readonly ConcurrentDictionary<string, TaskCompletionSource<byte[]>> _waitingCalls = new ConcurrentDictionary<string, TaskCompletionSource<byte[]>>();
+        private readonly ImmutableSortedDictionary<string, IMessageSerializer> _serializers;
 
-        public RpcClient(IManagedMqttClient mqttClient, IMessageSerializer serializer)
+        private readonly ConcurrentDictionary<string, TaskCompletionSource<MqttApplicationMessage>> _waitingCalls =
+            new ConcurrentDictionary<string, TaskCompletionSource<MqttApplicationMessage>>();
+
+        public RpcClient(IManagedMqttClient mqttClient, MqttConfigurator configurator)
         {
             _mqttClient = mqttClient ?? throw new ArgumentNullException(nameof(mqttClient));
-            _serializer = serializer;
+            _serializers = configurator.MessageSerializers.ToImmutableSortedDictionary(serializer => serializer.ContentType, serializer => serializer);
 
             _applicationMessageReceivedHandler = new RpcAwareApplicationMessageReceivedHandler(
                 _mqttClient.ApplicationMessageReceivedHandler,
@@ -32,16 +35,15 @@ namespace Abp.Mqtt.Rpc
             InitSubscription().ConfigureAwait(false).GetAwaiter().GetResult();
         }
 
+        private IMessageSerializer DefaultSerializer => _serializers.First().Value;
+
         public string ClientId => _mqttClient.Options.ClientOptions.ClientId;
 
         public void Dispose()
         {
             _mqttClient.ApplicationMessageReceivedHandler = _applicationMessageReceivedHandler.OriginalHandler;
 
-            foreach (var tcs in _waitingCalls.Values)
-            {
-                tcs.TrySetCanceled();
-            }
+            foreach (var tcs in _waitingCalls.Values) tcs.TrySetCanceled();
 
             _waitingCalls.Clear();
         }
@@ -55,33 +57,27 @@ namespace Abp.Mqtt.Rpc
         public Task<T> ExecuteAsync<T>(string methodName, object payload, MqttQualityOfServiceLevel qos, TimeSpan timeout,
             string target = null, CancellationToken cancellationToken = default)
         {
-            return ExecuteAsync<T>(methodName, _serializer.Serialize(payload), _serializer.ContentType, qos, timeout, target, cancellationToken);
+            return ExecuteAsync<T>(methodName, DefaultSerializer.Serialize(payload), DefaultSerializer.ContentType, qos, timeout, target, cancellationToken);
         }
 
         public async Task<T> ExecuteAsync<T>(string methodName, byte[] payload, string contentType, MqttQualityOfServiceLevel qos, TimeSpan timeout,
             string target = null, CancellationToken cancellationToken = default)
         {
             var response = await ExecuteAsync(methodName, payload, contentType, qos, timeout, target, cancellationToken);
-            return _serializer.Deserialize<T>(response);
+            return Deserialize<T>(response.ContentType, response.Payload);
         }
 
-        public async Task<byte[]> ExecuteAsync(string methodName, byte[] payload, string contentType, MqttQualityOfServiceLevel qos, TimeSpan timeout,
+        public async Task<MqttApplicationMessage> ExecuteAsync(string methodName, byte[] payload, string contentType, MqttQualityOfServiceLevel qos, TimeSpan timeout,
             string target = null, CancellationToken cancellationToken = default)
         {
             var id = Guid.NewGuid().ToString("N");
 
-            var requestMessage = BuildMessage(methodName, payload, contentType, qos, timeout, target, builder =>
-            {
-                builder.WithUserProperty("Id", id);
-            });
+            var requestMessage = BuildMessage(methodName, payload, contentType, qos, timeout, target, builder => { builder.WithUserProperty("Id", id); });
 
             try
             {
-                var tcs = new TaskCompletionSource<byte[]>();
-                if (!_waitingCalls.TryAdd(id, tcs))
-                {
-                    throw new InvalidOperationException();
-                }
+                var tcs = new TaskCompletionSource<MqttApplicationMessage>();
+                if (!_waitingCalls.TryAdd(id, tcs)) throw new InvalidOperationException();
 
                 await _mqttClient.PublishAsync(requestMessage).ConfigureAwait(false);
 
@@ -89,10 +85,7 @@ namespace Abp.Mqtt.Rpc
                 using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
                 linkedCts.Token.Register(() =>
                 {
-                    if (!tcs.Task.IsCompleted && !tcs.Task.IsFaulted && !tcs.Task.IsCanceled)
-                    {
-                        tcs.TrySetCanceled();
-                    }
+                    if (!tcs.Task.IsCompleted && !tcs.Task.IsFaulted && !tcs.Task.IsCanceled) tcs.TrySetCanceled();
                 });
 
                 try
@@ -119,14 +112,14 @@ namespace Abp.Mqtt.Rpc
             }
         }
 
-        public Task FireAndForgetAsync(string methodName, object args, MqttQualityOfServiceLevel qos,
-            TimeSpan timeout = default, string target = null)
+        public Task FireAndForgetAsync(string target, string methodName, object args, MqttQualityOfServiceLevel qos,
+            TimeSpan timeout = default)
         {
-            return FireAndForgetAsync(methodName, _serializer.Serialize(args), _serializer.ContentType, qos, timeout, target);
+            return FireAndForgetAsync(target, methodName, DefaultSerializer.Serialize(args), DefaultSerializer.ContentType, qos, timeout);
         }
 
-        public async Task FireAndForgetAsync(string methodName, byte[] payload, string contentType, MqttQualityOfServiceLevel qos,
-            TimeSpan timeout = default, string target = null)
+        public async Task FireAndForgetAsync(string target, string methodName, byte[] payload, string contentType, MqttQualityOfServiceLevel qos,
+            TimeSpan timeout = default)
         {
             var requestMessage = BuildMessage(methodName, payload, contentType, qos, timeout, target);
             await _mqttClient.PublishAsync(requestMessage).ConfigureAwait(false);
@@ -147,10 +140,7 @@ namespace Abp.Mqtt.Rpc
         {
             if (methodName == null) throw new ArgumentNullException(nameof(methodName));
 
-            if (methodName.Contains("/") || methodName.Contains("+") || methodName.Contains("#"))
-            {
-                throw new ArgumentException("The method name cannot contain /, + or #.");
-            }
+            if (methodName.Contains("/") || methodName.Contains("+") || methodName.Contains("#")) throw new ArgumentException("The method name cannot contain /, + or #.");
 
             if (!(_mqttClient.ApplicationMessageReceivedHandler is RpcAwareApplicationMessageReceivedHandler))
             {
@@ -163,12 +153,13 @@ namespace Abp.Mqtt.Rpc
                 .WithContentType(contentType)
                 .WithUserProperty("Method", methodName)
                 .WithPayload(payload)
-                .WithQualityOfServiceLevel(qos)
-                .WithMessageExpiryInterval(Convert.ToUInt32(timeout.TotalSeconds));
+                .WithQualityOfServiceLevel(qos);
 
             if (timeout != default && timeout != Timeout.InfiniteTimeSpan)
             {
-                builder.WithUserProperty("Timeout", Convert.ToInt32(timeout.TotalMilliseconds).ToString());
+                builder
+                    .WithMessageExpiryInterval(Convert.ToUInt32(timeout.TotalSeconds))
+                    .WithUserProperty("Timeout", Convert.ToInt32(timeout.TotalMilliseconds).ToString());
             }
 
             action?.Invoke(builder);
@@ -187,7 +178,7 @@ namespace Abp.Mqtt.Rpc
                 var success = bool.Parse(message.GetUserProperty("Success"));
                 if (success)
                 {
-                    tcs.TrySetResult(eventArgs.ApplicationMessage.Payload);
+                    tcs.TrySetResult(eventArgs.ApplicationMessage);
                 }
                 else
                 {
@@ -197,6 +188,16 @@ namespace Abp.Mqtt.Rpc
             }
 
             return Task.CompletedTask;
+        }
+
+        private T Deserialize<T>(string contentType, byte[] payload)
+        {
+            if (!_serializers.TryGetValue(contentType, out var serializer))
+            {
+                throw new ArgumentOutOfRangeException(nameof(contentType), $"Deserialize error: Invalid content type '{contentType}'.");
+            }
+
+            return serializer.Deserialize<T>(payload);
         }
     }
 }

@@ -12,16 +12,16 @@ namespace Abp.Mqtt.Rpc
             return builder;
         }
 
-        public static RpcServerBuilder AddMqttRpcClient(this IServiceCollection serviceCollection)
+        public static RpcClientBuilder AddMqttRpcClient(this IServiceCollection serviceCollection)
         {
             return AddMqttRpcClient<RpcClient>(serviceCollection);
         }
 
-        public static RpcServerBuilder AddMqttRpcClient<TClient>(this IServiceCollection serviceCollection)
+        public static RpcClientBuilder AddMqttRpcClient<TClient>(this IServiceCollection serviceCollection)
             where TClient : RpcClient
         {
-            serviceCollection.AddSingleton<RpcClient>();
-            var builder = new RpcServerBuilder(serviceCollection);
+            serviceCollection.AddSingleton<TClient>();
+            var builder = new RpcClientBuilder(serviceCollection);
             return builder;
         }
     }

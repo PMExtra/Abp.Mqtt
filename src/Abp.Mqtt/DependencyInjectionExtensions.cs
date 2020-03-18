@@ -13,10 +13,10 @@ namespace Abp.Mqtt
         {
             var configurator = new MqttConfigurator(mqttUri);
             serviceCollection.AddSingleton(configurator);
-            serviceCollection.AddTransient(services => services.GetService<MqttConfigurator>().ClientOptions);
-            serviceCollection.AddTransient(services => services.GetService<MqttConfigurator>().ManagedClientOptions);
-            serviceCollection.AddTransient(services => services.GetService<MqttConfigurator>().CreateMqttClient().ConfigureAwait(false).GetAwaiter().GetResult());
-            serviceCollection.AddTransient(services => services.GetService<MqttConfigurator>().CreateManagedMqttClient().ConfigureAwait(false).GetAwaiter().GetResult());
+            serviceCollection.AddSingleton(services => services.GetService<MqttConfigurator>().ClientOptions);
+            serviceCollection.AddSingleton(services => services.GetService<MqttConfigurator>().ManagedClientOptions);
+            serviceCollection.AddSingleton(services => services.GetService<MqttConfigurator>().CreateMqttClient().ConfigureAwait(false).GetAwaiter().GetResult());
+            serviceCollection.AddSingleton(services => services.GetService<MqttConfigurator>().CreateManagedMqttClient().ConfigureAwait(false).GetAwaiter().GetResult());
 
             return configurator;
         }
@@ -25,12 +25,15 @@ namespace Abp.Mqtt
         {
             var configurator = new MqttConfigurator(mqttUri);
             iocContainer.Register(Component.For<MqttConfigurator>().Instance(configurator));
-            iocContainer.Register(Component.For<IMqttClientOptions>().UsingFactoryMethod(kernel => kernel.Resolve<MqttConfigurator>().ClientOptions));
-            iocContainer.Register(Component.For<IManagedMqttClientOptions>().UsingFactoryMethod(kernel => kernel.Resolve<MqttConfigurator>().ManagedClientOptions));
+            iocContainer.Register(Component.For<IMqttClientOptions>().UsingFactoryMethod(kernel => kernel.Resolve<MqttConfigurator>().ClientOptions).LifestyleSingleton());
+            iocContainer.Register(Component.For<IManagedMqttClientOptions>().UsingFactoryMethod(kernel => kernel.Resolve<MqttConfigurator>().ManagedClientOptions)
+                .LifestyleSingleton());
             iocContainer.Register(Component.For<IMqttClient>()
-                .UsingFactoryMethod(kernel => kernel.Resolve<MqttConfigurator>().CreateMqttClient().ConfigureAwait(false).GetAwaiter().GetResult()));
+                .UsingFactoryMethod(kernel => kernel.Resolve<MqttConfigurator>().CreateMqttClient().ConfigureAwait(false).GetAwaiter().GetResult())
+                .LifestyleSingleton());
             iocContainer.Register(Component.For<IManagedMqttClient>()
-                .UsingFactoryMethod(kernel => kernel.Resolve<MqttConfigurator>().CreateManagedMqttClient().ConfigureAwait(false).GetAwaiter().GetResult()));
+                .UsingFactoryMethod(kernel => kernel.Resolve<MqttConfigurator>().CreateManagedMqttClient().ConfigureAwait(false).GetAwaiter().GetResult())
+                .LifestyleSingleton());
 
             return configurator;
         }

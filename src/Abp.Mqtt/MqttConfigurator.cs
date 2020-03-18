@@ -2,9 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Abp.Mqtt.Serialization;
 using MQTTnet;
 using MQTTnet.Client;
-using MQTTnet.Client.Connecting;
 using MQTTnet.Client.Options;
 using MQTTnet.Extensions.ManagedClient;
 
@@ -23,6 +23,8 @@ namespace Abp.Mqtt
             _mqttUri = mqttUri;
         }
 
+        public List<IMessageSerializer> MessageSerializers { get; } = new List<IMessageSerializer> {new JsonMessageSerializer()};
+
         public IMqttClientOptions ClientOptions
         {
             get => _clientOptions ?? (_clientOptions = GetClientOptions());
@@ -33,6 +35,12 @@ namespace Abp.Mqtt
         {
             get => _managedClientOptions ?? (_managedClientOptions = GetManagedClientOptions());
             set => _managedClientOptions = value;
+        }
+
+        public MqttConfigurator ConfigureSerializers(Action<List<IMessageSerializer>> configure)
+        {
+            configure(MessageSerializers);
+            return this;
         }
 
         public MqttConfigurator ConfigureClient(Action<MqttClientOptionsBuilder> configure)
@@ -53,7 +61,7 @@ namespace Abp.Mqtt
         {
             var uri = new Uri(_mqttUri);
             var builder = new MqttClientOptionsBuilder();
-            var port = uri.IsDefaultPort ? null : (int?)uri.Port;
+            var port = uri.IsDefaultPort ? null : (int?) uri.Port;
             switch (uri.Scheme)
             {
                 case "tcp":
@@ -74,6 +82,7 @@ namespace Abp.Mqtt
                 default:
                     throw new ArgumentException("Unexpected scheme in uri.");
             }
+
             if (uri.UserInfo?.Any() == true)
             {
                 var userInfo = uri.UserInfo.Split(':');
@@ -81,10 +90,8 @@ namespace Abp.Mqtt
                 var password = userInfo.Length > 1 ? userInfo[1] : "";
                 builder.WithCredentials(username, password);
             }
-            foreach (var configure in _clientConfigurators)
-            {
-                configure(builder);
-            }
+
+            foreach (var configure in _clientConfigurators) configure(builder);
             return builder.Build();
         }
 
@@ -93,20 +100,14 @@ namespace Abp.Mqtt
             var builder = new ManagedMqttClientOptionsBuilder();
             builder
                 .WithClientOptions(ClientOptions);
-            foreach (var configure in _managedClientConfigurators)
-            {
-                configure(builder);
-            }
+            foreach (var configure in _managedClientConfigurators) configure(builder);
             return builder.Build();
         }
 
         public async Task<IMqttClient> CreateMqttClient(Func<IMqttClient, Task> configure = null)
         {
             var client = new MqttFactory().CreateMqttClient();
-            if (configure != null)
-            {
-                await configure(client);
-            }
+            if (configure != null) await configure(client);
             await client.ConnectAsync(ClientOptions);
             return client;
         }
@@ -114,10 +115,7 @@ namespace Abp.Mqtt
         public async Task<IManagedMqttClient> CreateManagedMqttClient(Func<IManagedMqttClient, Task> configure = null)
         {
             var client = new MqttFactory().CreateManagedMqttClient();
-            if (configure != null)
-            {
-                await configure(client);
-            }
+            if (configure != null) await configure(client);
             await client.StartAsync(ManagedClientOptions);
             return client;
         }

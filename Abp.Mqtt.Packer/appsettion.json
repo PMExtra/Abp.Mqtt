@@ -1,8 +1,0 @@
-{
-  "ConnectionStrings": {
-    "Mqtt": "mqtt://packer01:123qwe@192.168.102.101"
-  },
-  "App": {
-    "PackerId": "packer01"
-  }
-}

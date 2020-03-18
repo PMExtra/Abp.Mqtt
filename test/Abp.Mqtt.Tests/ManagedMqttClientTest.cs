@@ -7,14 +7,6 @@ namespace Abp.Mqtt.Tests
 {
     public class ManagedMqttClientTest : IDisposable
     {
-        private const string MqttServer = "mqtt://test01:123@192.168.102.101";
-
-        private const string MsId = "test01";
-        private readonly IIocManager _iocManagerA;
-        private readonly IIocManager _iocManagerB;
-        private readonly IManagedMqttClient _clientA;
-        private readonly IManagedMqttClient _clientB;
-
         public ManagedMqttClientTest()
         {
             _iocManagerA = new IocManager();
@@ -33,18 +25,25 @@ namespace Abp.Mqtt.Tests
             _iocManagerB.Dispose();
         }
 
-        [Fact]
-        public void TestStarted()
-        {
-            Assert.True(_clientA.IsStarted);
-            Assert.True(_clientB.IsStarted);
-        }
+        private const string MqttServer = "mqtt://test01:123@192.168.102.101";
+
+        private readonly IIocManager _iocManagerA;
+        private readonly IIocManager _iocManagerB;
+        private readonly IManagedMqttClient _clientA;
+        private readonly IManagedMqttClient _clientB;
 
         [Fact]
         public void TestConnected()
         {
             Assert.True(_clientA.IsConnected);
             Assert.True(_clientB.IsConnected);
+        }
+
+        [Fact]
+        public void TestStarted()
+        {
+            Assert.True(_clientA.IsStarted);
+            Assert.True(_clientB.IsStarted);
         }
     }
 }

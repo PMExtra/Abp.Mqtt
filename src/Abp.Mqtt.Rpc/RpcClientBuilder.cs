@@ -1,6 +1,4 @@
-using Abp.Mqtt.Serialization;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Abp.Mqtt.Rpc
 {
@@ -11,12 +9,6 @@ namespace Abp.Mqtt.Rpc
         internal RpcClientBuilder(IServiceCollection serviceCollection)
         {
             _serviceCollection = serviceCollection;
-        }
-
-        public RpcClientBuilder AddJsonSerializer()
-        {
-            _serviceCollection.Replace(ServiceDescriptor.Transient(typeof(IMessageSerializer), typeof(JsonMessageSerializer)));
-            return this;
         }
     }
 }

@@ -1,5 +1,4 @@
 using System;
-using MQTTnet;
 
 namespace Abp.Mqtt.Serialization
 {

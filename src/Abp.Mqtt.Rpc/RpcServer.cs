@@ -18,13 +18,13 @@ namespace Abp.Mqtt.Rpc
     public class RpcServer : IRpcServer, IDisposable
     {
         private readonly RpcAwareApplicationMessageReceivedHandler _applicationMessageReceivedHandler;
+        private readonly CancellationTokenSource _exitSource = new CancellationTokenSource();
         private readonly Dictionary<string, MethodInfo> _methods;
         private readonly IManagedMqttClient _mqttClient;
         private readonly ConcurrentDictionary<CancellationTokenSource, Task> _noIdCalls = new ConcurrentDictionary<CancellationTokenSource, Task>();
         private readonly IMessageSerializer _serializer;
         private readonly IServiceProvider _serviceProvider;
         private readonly ConcurrentDictionary<string, TaskInfo> _waitingCalls = new ConcurrentDictionary<string, TaskInfo>();
-        private readonly CancellationTokenSource _exitSource = new CancellationTokenSource();
 
         public RpcServer(IManagedMqttClient mqttClient, IMessageSerializer serializer, IServiceProvider serviceProvider)
         {
@@ -79,6 +79,7 @@ namespace Abp.Mqtt.Rpc
                     _exitSource.Cancel();
                     return;
                 }
+
                 await Task.Delay(100); // TODO
             }
 
@@ -89,14 +90,8 @@ namespace Abp.Mqtt.Rpc
         {
             _mqttClient.ApplicationMessageReceivedHandler = _applicationMessageReceivedHandler.OriginalHandler;
 
-            foreach (var taskInfo in _waitingCalls.Values)
-            {
-                taskInfo.CancellationTokenSource.Cancel();
-            }
-            foreach (var cancellationTokenSource in _noIdCalls.Keys)
-            {
-                cancellationTokenSource.Cancel();
-            }
+            foreach (var taskInfo in _waitingCalls.Values) taskInfo.CancellationTokenSource.Cancel();
+            foreach (var cancellationTokenSource in _noIdCalls.Keys) cancellationTokenSource.Cancel();
 
             _waitingCalls.Clear();
             _noIdCalls.Clear();
@@ -148,6 +143,7 @@ namespace Abp.Mqtt.Rpc
                         .Build();
                     await _mqttClient.PublishAsync(response).ConfigureAwait(false);
                 }
+
                 return;
             }
 
@@ -155,17 +151,11 @@ namespace Abp.Mqtt.Rpc
 
             object[] args;
             if (parameterInfo == null)
-            {
                 args = null;
-            }
             else if (parameterInfo.ParameterType == typeof(byte[]))
-            {
-                args = new[] { (object)message.Payload };
-            }
+                args = new[] {(object) message.Payload};
             else
-            {
-                args = new[] { _serializer.Deserialize(message.Payload, parameterInfo.ParameterType) };
-            }
+                args = new[] {_serializer.Deserialize(message.Payload, parameterInfo.ParameterType)};
 
             using var serviceScope = _serviceProvider.CreateScope();
             using var cts = string.IsNullOrEmpty(timeout) ? new CancellationTokenSource() : new CancellationTokenSource(int.Parse(timeout));
@@ -186,15 +176,13 @@ namespace Abp.Mqtt.Rpc
                             returnValue = resultProperty.GetValue(t);
                         }
                     }
+
                     return returnValue;
                 }, cts.Token);
 
                 if (!string.IsNullOrEmpty(id))
                 {
-                    if (!_waitingCalls.TryAdd(id, new TaskInfo(task, cts)))
-                    {
-                        throw new InvalidOperationException();
-                    }
+                    if (!_waitingCalls.TryAdd(id, new TaskInfo(task, cts))) throw new InvalidOperationException();
                 }
                 else
                 {
@@ -230,13 +218,9 @@ namespace Abp.Mqtt.Rpc
             finally
             {
                 if (!string.IsNullOrEmpty(id))
-                {
                     _waitingCalls.TryRemove(id, out _);
-                }
                 else
-                {
                     _noIdCalls.TryRemove(cts, out _);
-                }
             }
         }
     }

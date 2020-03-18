@@ -1,16 +1,16 @@
-using Microsoft.Extensions.Configuration;
 using System;
 using Abp.Mqtt.Rpc;
 using Abp.Mqtt.Serialization;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using MQTTnet.Formatter;
 
 namespace Abp.Mqtt.Service.Test
 {
-    class Program
+    internal class Program
     {
         public static readonly IConfigurationRoot AppConfiguration;
-        private static string mqttService = "mqtt://packer02:123qwe@192.168.102.101";
+        private static readonly string mqttService = "mqtt://packer02:123qwe@192.168.102.101";
 
         static Program()
         {
@@ -32,20 +32,21 @@ namespace Abp.Mqtt.Service.Test
         {
             services
                 .AddMqtt(mqttService)
+                .ConfigureSerializers(serializers =>
+                {
+                    serializers.Insert(0, new BsonMessageSerializer());
+                })
                 .ConfigureClient(builder =>
                 {
                     builder.WithClientId("packer02");
                     builder.WithProtocolVersion(MqttProtocolVersion.V500);
                 })
-                .ConfigureManagedClient(builder =>
-                {
-                    builder.WithAutoReconnectDelay(TimeSpan.FromSeconds(5));
-                });
+                .ConfigureManagedClient(builder => { builder.WithAutoReconnectDelay(TimeSpan.FromSeconds(5)); });
 
             services
                 .AddMqttRpcServer<RpcServer>()
-                .AddSerializer<BsonMessageSerializer>()
                 .AddServices(typeof(Program).Assembly);
+
             return services;
         }
     }
