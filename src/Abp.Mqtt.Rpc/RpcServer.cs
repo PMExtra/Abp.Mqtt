@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
@@ -17,30 +18,40 @@ namespace Abp.Mqtt.Rpc
 {
     public class RpcServer : IRpcServer, IDisposable
     {
-        private readonly RpcAwareApplicationMessageReceivedHandler _applicationMessageReceivedHandler;
+        //private readonly RpcAwareApplicationMessageReceivedHandler _applicationMessageReceivedHandler;
         private readonly CancellationTokenSource _exitSource = new CancellationTokenSource();
         private readonly Dictionary<string, MethodInfo> _methods;
         private readonly IManagedMqttClient _mqttClient;
         private readonly ConcurrentDictionary<CancellationTokenSource, Task> _noIdCalls = new ConcurrentDictionary<CancellationTokenSource, Task>();
-        private readonly IMessageSerializer _serializer;
+        private readonly ImmutableSortedDictionary<string, IMessageSerializer> _serializers;
         private readonly IServiceProvider _serviceProvider;
         private readonly ConcurrentDictionary<string, TaskInfo> _waitingCalls = new ConcurrentDictionary<string, TaskInfo>();
 
-        public RpcServer(IManagedMqttClient mqttClient, IMessageSerializer serializer, IServiceProvider serviceProvider)
+        private readonly DistributedMqttClient _distributedMqttClient;
+        private readonly AwareDistributeMessageReceivedHandler _awareDistributeMessageReceivedHandler;
+
+
+
+        public RpcServer(IManagedMqttClient mqttClient, MqttConfigurator configurator, IServiceProvider serviceProvider, DistributedMqttClient distributedMqttClient)
         {
             _mqttClient = mqttClient;
-            _serializer = serializer;
+            _serializers = configurator.MessageSerializers.ToImmutableSortedDictionary(serializer => serializer.ContentType, serializer => serializer);
             _serviceProvider = serviceProvider;
             _methods = serviceProvider.GetServices<IRpcService>().SelectMany(s => s.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance))
                 .ToDictionary(mi => mi.Name, mi => mi);
-            _applicationMessageReceivedHandler = new RpcAwareApplicationMessageReceivedHandler(
-                _mqttClient.ApplicationMessageReceivedHandler,
-                HandleApplicationMessageReceivedAsync);
-
+            /*
+             _applicationMessageReceivedHandler = new RpcAwareApplicationMessageReceivedHandler(
+                 _mqttClient.ApplicationMessageReceivedHandler,
+                 HandleApplicationMessageReceivedAsync);
+                 */
+            _distributedMqttClient = distributedMqttClient ?? throw new ArgumentNullException(nameof(mqttClient));
+            _awareDistributeMessageReceivedHandler = new AwareDistributeMessageReceivedHandler( HandleApplicationMessageReceivedAsync);
             Start();
         }
 
         public string ServerId => _mqttClient.Options.ClientOptions.ClientId;
+
+        private IMessageSerializer DefaultSerializer => _serializers.First().Value;
 
         public bool Started { get; private set; }
 
@@ -54,7 +65,10 @@ namespace Abp.Mqtt.Rpc
         {
             if (Started) return;
             Started = true;
-            _mqttClient.ApplicationMessageReceivedHandler = _applicationMessageReceivedHandler;
+            //_mqttClient.ApplicationMessageReceivedHandler = _applicationMessageReceivedHandler;
+
+            
+
             InitSubscription().ConfigureAwait(false).GetAwaiter().GetResult();
         }
 
@@ -69,7 +83,9 @@ namespace Abp.Mqtt.Rpc
 
             if (timeout == default) timeout = Timeout.InfiniteTimeSpan;
 
-            _mqttClient.ApplicationMessageReceivedHandler = _applicationMessageReceivedHandler.OriginalHandler;
+            //_mqttClient.ApplicationMessageReceivedHandler = _applicationMessageReceivedHandler.OriginalHandler;
+
+            await _distributedMqttClient.UnSubscribeAsync(GetRequestTopic("+")).ConfigureAwait(false);
 
             while (timeout == Timeout.InfiniteTimeSpan || DateTime.Now - start > timeout)
             {
@@ -88,7 +104,9 @@ namespace Abp.Mqtt.Rpc
 
         public void ForceStop()
         {
-            _mqttClient.ApplicationMessageReceivedHandler = _applicationMessageReceivedHandler.OriginalHandler;
+            //_mqttClient.ApplicationMessageReceivedHandler = _applicationMessageReceivedHandler.OriginalHandler;
+
+
 
             foreach (var taskInfo in _waitingCalls.Values) taskInfo.CancellationTokenSource.Cancel();
             foreach (var cancellationTokenSource in _noIdCalls.Keys) cancellationTokenSource.Cancel();
@@ -103,7 +121,10 @@ namespace Abp.Mqtt.Rpc
         public async Task InitSubscription()
         {
             // await _mqttClient.SubscribeAsync(GetRequestTopic(), MqttQualityOfServiceLevel.ExactlyOnce);
-            await _mqttClient.SubscribeAsync(GetRequestTopic("+"), MqttQualityOfServiceLevel.ExactlyOnce);
+            //await _mqttClient.SubscribeAsync(GetRequestTopic("+"), MqttQualityOfServiceLevel.ExactlyOnce);
+
+            await _distributedMqttClient.SubscribeAsync(GetRequestTopic("+"), MqttQualityOfServiceLevel.AtLeastOnce, _awareDistributeMessageReceivedHandler);
+
         }
 
         private string GetResponseTopic(string source = null)
@@ -153,9 +174,9 @@ namespace Abp.Mqtt.Rpc
             if (parameterInfo == null)
                 args = null;
             else if (parameterInfo.ParameterType == typeof(byte[]))
-                args = new[] {(object) message.Payload};
+                args = new[] { (object)message.Payload };
             else
-                args = new[] {_serializer.Deserialize(message.Payload, parameterInfo.ParameterType)};
+                args = new[] { DefaultSerializer.Deserialize(message.Payload, parameterInfo.ParameterType) };
 
             using var serviceScope = _serviceProvider.CreateScope();
             using var cts = string.IsNullOrEmpty(timeout) ? new CancellationTokenSource() : new CancellationTokenSource(int.Parse(timeout));
@@ -197,8 +218,8 @@ namespace Abp.Mqtt.Rpc
                     .WithTopic(GetResponseTopic(GetSource(message.Topic)))
                     .WithUserProperty("Id", id)
                     .WithUserProperty("Success", true.ToString())
-                    .WithContentType(_serializer.ContentType)
-                    .WithPayload(_serializer.Serialize(result))
+                    .WithContentType(DefaultSerializer.ContentType)
+                    .WithPayload(DefaultSerializer.Serialize(result))
                     .WithAtLeastOnceQoS()
                     .Build();
                 await _mqttClient.PublishAsync(response).ConfigureAwait(false);

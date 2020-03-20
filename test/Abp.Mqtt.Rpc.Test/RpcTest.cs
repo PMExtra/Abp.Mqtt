@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -17,6 +18,9 @@ namespace Abp.Mqtt.Rpc.Test
         {
             _testOutputHelper = testOutputHelper;
             _serviceProvider = ConfigureServices(new ServiceCollection()).BuildServiceProvider();
+
+            var service = _serviceProvider.GetRequiredService<RpcServer>();
+            Task.Run(() => { service.Wait(); });
         }
 
         private readonly IServiceProvider _serviceProvider;
@@ -25,11 +29,18 @@ namespace Abp.Mqtt.Rpc.Test
 
         private IServiceCollection ConfigureServices(IServiceCollection services)
         {
-            services.AddMqtt(mqttService)
-                .ConfigureClient(builder => { builder.WithProtocolVersion(MqttProtocolVersion.V500); })
+            var mqttConfigure =   services.AddMqtt(mqttService)
+                .ConfigureClient(builder =>
+                {
+                    builder.WithClientId("packer01").WithProtocolVersion(MqttProtocolVersion.V500);
+                })
                 .ConfigureManagedClient(builder => { builder.WithAutoReconnectDelay(TimeSpan.FromSeconds(5)); });
 
+            //mqttConfigure.ConfigureSerializers(configure => { configure.Insert(0, new JsonMessageSerializer()); });
+
             services.AddMqttRpcClient();
+
+            services.AddMqttRpcServer<RpcServer>();
 
             return services;
         }
@@ -105,7 +116,7 @@ namespace Abp.Mqtt.Rpc.Test
         [Fact]
         public async Task TestMethod1()
         {
-            var packerId = "packer02";
+            var packerId = "packer01";
             var client = _serviceProvider.GetRequiredService<RpcClient>();
             var beginDate = DateTime.Now;
             var pong = await client.ExecuteAsync<string>("Ping", "Ping", MqttQualityOfServiceLevel.ExactlyOnce, TimeSpan.FromMinutes(1), packerId);

@@ -17,8 +17,13 @@ namespace Abp.Mqtt
             serviceCollection.AddSingleton(services => services.GetService<MqttConfigurator>().ManagedClientOptions);
             serviceCollection.AddSingleton(services => services.GetService<MqttConfigurator>().CreateMqttClient().ConfigureAwait(false).GetAwaiter().GetResult());
             serviceCollection.AddSingleton(services => services.GetService<MqttConfigurator>().CreateManagedMqttClient().ConfigureAwait(false).GetAwaiter().GetResult());
-
+            serviceCollection.AddSingleton<DistributedMqttClient>();
             return configurator;
+        }
+
+        public static IServiceCollection AddDistributedMqttClient(this IServiceCollection serviceCollection)
+        {
+            return serviceCollection;
         }
 
         public static MqttConfigurator AddMqtt(this IWindsorContainer iocContainer, string mqttUri)
@@ -34,7 +39,7 @@ namespace Abp.Mqtt
             iocContainer.Register(Component.For<IManagedMqttClient>()
                 .UsingFactoryMethod(kernel => kernel.Resolve<MqttConfigurator>().CreateManagedMqttClient().ConfigureAwait(false).GetAwaiter().GetResult())
                 .LifestyleSingleton());
-
+            iocContainer.Register(Component.For<DistributedMqttClient>().LifestyleSingleton());
             return configurator;
         }
     }

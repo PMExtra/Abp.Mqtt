@@ -14,23 +14,36 @@ namespace Abp.Mqtt.Rpc
 {
     public class RpcClient : IDisposable
     {
-        private readonly RpcAwareApplicationMessageReceivedHandler _applicationMessageReceivedHandler;
+        //private readonly RpcAwareApplicationMessageReceivedHandler _applicationMessageReceivedHandler;
+
+        private readonly AwareDistributeMessageReceivedHandler _awareDistributeMessageReceivedHandler;
         private readonly IManagedMqttClient _mqttClient;
         private readonly ImmutableSortedDictionary<string, IMessageSerializer> _serializers;
+
+        private readonly DistributedMqttClient _distributedMqttClient;
 
         private readonly ConcurrentDictionary<string, TaskCompletionSource<MqttApplicationMessage>> _waitingCalls =
             new ConcurrentDictionary<string, TaskCompletionSource<MqttApplicationMessage>>();
 
-        public RpcClient(IManagedMqttClient mqttClient, MqttConfigurator configurator)
+        public RpcClient(IManagedMqttClient mqttClient, MqttConfigurator configurator,DistributedMqttClient distributedMqttClient)
         {
+
             _mqttClient = mqttClient ?? throw new ArgumentNullException(nameof(mqttClient));
+
+            _distributedMqttClient = distributedMqttClient ?? throw new ArgumentNullException(nameof(mqttClient));
+
             _serializers = configurator.MessageSerializers.ToImmutableSortedDictionary(serializer => serializer.ContentType, serializer => serializer);
 
+            /*
             _applicationMessageReceivedHandler = new RpcAwareApplicationMessageReceivedHandler(
                 _mqttClient.ApplicationMessageReceivedHandler,
                 HandleApplicationMessageReceivedAsync);
 
             _mqttClient.ApplicationMessageReceivedHandler = _applicationMessageReceivedHandler;
+            */
+            _awareDistributeMessageReceivedHandler = new AwareDistributeMessageReceivedHandler(HandleApplicationMessageReceivedAsync);
+
+            
 
             InitSubscription().ConfigureAwait(false).GetAwaiter().GetResult();
         }
@@ -41,7 +54,9 @@ namespace Abp.Mqtt.Rpc
 
         public void Dispose()
         {
-            _mqttClient.ApplicationMessageReceivedHandler = _applicationMessageReceivedHandler.OriginalHandler;
+            //_mqttClient.ApplicationMessageReceivedHandler = _applicationMessageReceivedHandler.OriginalHandler;
+
+            //TODO 需要取消订阅topic
 
             foreach (var tcs in _waitingCalls.Values) tcs.TrySetCanceled();
 
@@ -51,7 +66,8 @@ namespace Abp.Mqtt.Rpc
         private async Task InitSubscription()
         {
             // await _mqttClient.SubscribeAsync(GetResponseTopic(), MqttQualityOfServiceLevel.AtLeastOnce);
-            await _mqttClient.SubscribeAsync(GetResponseTopic("+"), MqttQualityOfServiceLevel.AtLeastOnce);
+            //await _mqttClient.SubscribeAsync(GetResponseTopic("+"), MqttQualityOfServiceLevel.AtLeastOnce);
+            await _distributedMqttClient.SubscribeAsync(GetResponseTopic("+"), MqttQualityOfServiceLevel.AtLeastOnce, _awareDistributeMessageReceivedHandler);
         }
 
         public Task<T> ExecuteAsync<T>(string methodName, object payload, MqttQualityOfServiceLevel qos, TimeSpan timeout,
@@ -142,7 +158,7 @@ namespace Abp.Mqtt.Rpc
 
             if (methodName.Contains("/") || methodName.Contains("+") || methodName.Contains("#")) throw new ArgumentException("The method name cannot contain /, + or #.");
 
-            if (!(_mqttClient.ApplicationMessageReceivedHandler is RpcAwareApplicationMessageReceivedHandler))
+            if (!(_mqttClient.ApplicationMessageReceivedHandler is DistributedMqttClient))
             {
                 throw new InvalidOperationException("The application message received handler was modified.");
             }
