@@ -85,7 +85,7 @@ namespace Abp.Mqtt.Rpc
 
             //_mqttClient.ApplicationMessageReceivedHandler = _applicationMessageReceivedHandler.OriginalHandler;
 
-            await _distributedMqttClient.UnSubscribeAsync(GetRequestTopic("+")).ConfigureAwait(false);
+            await _distributedMqttClient.UnSubscribeAsync(GetRequestTopic("packer01")).ConfigureAwait(false);
 
             while (timeout == Timeout.InfiniteTimeSpan || DateTime.Now - start > timeout)
             {
@@ -123,8 +123,13 @@ namespace Abp.Mqtt.Rpc
             // await _mqttClient.SubscribeAsync(GetRequestTopic(), MqttQualityOfServiceLevel.ExactlyOnce);
             //await _mqttClient.SubscribeAsync(GetRequestTopic("+"), MqttQualityOfServiceLevel.ExactlyOnce);
 
-            await _distributedMqttClient.SubscribeAsync(GetRequestTopic("+"), MqttQualityOfServiceLevel.AtLeastOnce, _awareDistributeMessageReceivedHandler);
+            //await _distributedMqttClient.SubscribeAsync(GetRequestTopic("packer02"), MqttQualityOfServiceLevel.AtLeastOnce, _awareDistributeMessageReceivedHandler);
 
+        }
+
+        public async Task Subscription(string clientId)
+        {
+            await _distributedMqttClient.SubscribeAsync(GetRequestTopic(clientId), MqttQualityOfServiceLevel.AtLeastOnce, _awareDistributeMessageReceivedHandler);
         }
 
         private string GetResponseTopic(string source = null)

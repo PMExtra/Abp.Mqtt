@@ -38,7 +38,7 @@ namespace Abp.Mqtt.Service.Test
                 })
                 .ConfigureClient(builder =>
                 {
-                    builder.WithClientId("packer02");
+                    //builder.WithClientId("packer02");
                     builder.WithProtocolVersion(MqttProtocolVersion.V500);
                 })
                 .ConfigureManagedClient(builder => { builder.WithAutoReconnectDelay(TimeSpan.FromSeconds(5)); });
