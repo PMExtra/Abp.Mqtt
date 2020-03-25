@@ -43,6 +43,7 @@ namespace Abp.Mqtt.Service.Test
                 })
                 .ConfigureManagedClient(builder => { builder.WithAutoReconnectDelay(TimeSpan.FromSeconds(5)); });
 
+
             services
                 .AddMqttRpcServer<RpcServer>()
                 .AddServices(typeof(Program).Assembly);
