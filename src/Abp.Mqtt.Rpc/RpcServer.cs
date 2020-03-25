@@ -121,7 +121,7 @@ namespace Abp.Mqtt.Rpc
         public async Task InitSubscription()
         {
             // await _mqttClient.SubscribeAsync(GetRequestTopic(), MqttQualityOfServiceLevel.ExactlyOnce);
-            //await _mqttClient.SubscribeAsync(GetRequestTopic("+"), MqttQualityOfServiceLevel.ExactlyOnce);
+            await _mqttClient.SubscribeAsync(GetRequestTopic("+"), MqttQualityOfServiceLevel.ExactlyOnce);
 
             //await _distributedMqttClient.SubscribeAsync(GetRequestTopic("packer02"), MqttQualityOfServiceLevel.AtLeastOnce, _awareDistributeMessageReceivedHandler);
 
