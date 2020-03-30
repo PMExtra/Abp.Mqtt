@@ -8,9 +8,12 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="3.1.2" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="3.1.2" />
+    <PackageReference Include="Microsoft.NETCore" Version="5.0.0" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\..\开源库\MQTTnet-master\Source\MQTTnet.Extensions.ManagedClient\MQTTnet.Extensions.ManagedClient.csproj" />
+    <ProjectReference Include="..\..\..\开源库\MQTTnet-master\Source\MQTTnet\MQTTnet.csproj" />
     <ProjectReference Include="..\..\src\Abp.Mqtt.BsonSerializer\Abp.Mqtt.BsonSerializer.csproj" />
     <ProjectReference Include="..\..\src\Abp.Mqtt.Rpc\Abp.Mqtt.Rpc.csproj" />
     <ProjectReference Include="..\..\src\Abp.Mqtt\Abp.Mqtt.csproj" />

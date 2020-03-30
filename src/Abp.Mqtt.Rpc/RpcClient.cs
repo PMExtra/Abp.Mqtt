@@ -67,8 +67,14 @@ namespace Abp.Mqtt.Rpc
         {
             // await _mqttClient.SubscribeAsync(GetResponseTopic(), MqttQualityOfServiceLevel.AtLeastOnce);
             //await _mqttClient.SubscribeAsync(GetResponseTopic("+"), MqttQualityOfServiceLevel.AtLeastOnce);
-            await _distributedMqttClient.SubscribeAsync(GetResponseTopic("+"), MqttQualityOfServiceLevel.AtLeastOnce, _awareDistributeMessageReceivedHandler);
+            //await _distributedMqttClient.SubscribeAsync(GetResponseTopic("packer01"), MqttQualityOfServiceLevel.AtLeastOnce, _awareDistributeMessageReceivedHandler);
         }
+
+        public async Task Subscription(string serverId)
+        {
+            await _distributedMqttClient.SubscribeAsync(GetResponseTopic(serverId), MqttQualityOfServiceLevel.AtLeastOnce, _awareDistributeMessageReceivedHandler);
+        }
+
 
         public Task<T> ExecuteAsync<T>(string methodName, object payload, MqttQualityOfServiceLevel qos, TimeSpan timeout,
             string target = null, CancellationToken cancellationToken = default)

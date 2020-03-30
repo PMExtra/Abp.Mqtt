@@ -20,6 +20,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\..\开源库\MQTTnet-master\Source\MQTTnet.Extensions.ManagedClient\MQTTnet.Extensions.ManagedClient.csproj" />
+    <ProjectReference Include="..\..\..\开源库\MQTTnet-master\Source\MQTTnet\MQTTnet.csproj" />
     <ProjectReference Include="..\..\src\Abp.Mqtt.BsonSerializer\Abp.Mqtt.BsonSerializer.csproj" />
     <ProjectReference Include="..\..\src\Abp.Mqtt.Rpc\Abp.Mqtt.Rpc.csproj" />
     <ProjectReference Include="..\..\src\Abp.Mqtt\Abp.Mqtt.csproj" />
