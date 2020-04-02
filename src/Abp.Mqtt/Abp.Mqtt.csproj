@@ -1,15 +1,15 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Abp" Version="4.9.0" />
+    <PackageReference Include="Abp" Version="[4.0.0,)" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="D:\Developer\Abp.Mqtt\lib\MQTTnet\Source\MQTTnet.Extensions.ManagedClient\MQTTnet.Extensions.ManagedClient.csproj" />
+    <ProjectReference Include="..\..\lib\MQTTnet\Source\MQTTnet.Extensions.ManagedClient\MQTTnet.Extensions.ManagedClient.csproj" />
   </ItemGroup>
 
 </Project>

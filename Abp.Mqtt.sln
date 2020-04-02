@@ -5,7 +5,7 @@ VisualStudioVersion = 16.0.29613.14
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Abp.Mqtt", "src\Abp.Mqtt\Abp.Mqtt.csproj", "{8FBA58EA-F688-4476-B146-8E7766E4C156}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Abp.Mqtt.BsonSerializer", "src\Abp.Mqtt.BsonSerializer\Abp.Mqtt.BsonSerializer.csproj", "{3AF0D2D9-CBF7-433F-B9E5-0CF4B358A697}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Abp.Mqtt.Rpc.BsonSerializer", "src\Abp.Mqtt.Rpc.BsonSerializer\Abp.Mqtt.Rpc.BsonSerializer.csproj", "{3AF0D2D9-CBF7-433F-B9E5-0CF4B358A697}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Abp.Mqtt.Rpc", "src\Abp.Mqtt.Rpc\Abp.Mqtt.Rpc.csproj", "{CA1A878B-257A-4C6F-AFB4-A2EFE6E61A9B}"
 EndProject

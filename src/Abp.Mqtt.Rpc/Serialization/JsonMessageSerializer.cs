@@ -3,10 +3,12 @@ using System.Linq;
 using System.Text;
 using Newtonsoft.Json;
 
-namespace Abp.Mqtt.Serialization
+namespace Abp.Mqtt.Rpc.Serialization
 {
     public class JsonMessageSerializer : IMessageSerializer
     {
+        public bool UTF8 => true;
+
         public string ContentType => "application/json";
 
         public virtual byte[] Serialize(object payload)

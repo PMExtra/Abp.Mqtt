@@ -81,7 +81,7 @@ namespace Abp.Mqtt.Rpc.Test
             var success = 0;
             var failed = 0;
             var i = 0;
-            var client = _serviceProviderClient.GetRequiredService<RpcClient>();
+            var client = _serviceProviderClient.GetRequiredService<SimpleRpcClient>();
 
             using (var cts = new CancellationTokenSource(period))
             {
@@ -144,14 +144,14 @@ namespace Abp.Mqtt.Rpc.Test
             var serviceId = "service01";
             var c_server = _serviceProviderClient.GetRequiredService<RpcServer>();
             await c_server.Subscription(serviceId).ConfigureAwait(false);
-            var client = _serviceProviderClient.GetRequiredService<RpcClient>();
+            var client = _serviceProviderClient.GetRequiredService<SimpleRpcClient>();
             await client.Subscription(serviceId).ConfigureAwait(false);
 
 
             var clientId = "client01";
             var s_service = _serviceProviderService.GetRequiredService<RpcServer>();
             await s_service.Subscription(clientId).ConfigureAwait(false);
-            var s_client = _serviceProviderService.GetRequiredService<RpcClient>();
+            var s_client = _serviceProviderService.GetRequiredService<SimpleRpcClient>();
             await s_client.Subscription(clientId).ConfigureAwait(false);
 
             Thread.Sleep(2000);

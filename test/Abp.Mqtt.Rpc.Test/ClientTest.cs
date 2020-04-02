@@ -55,7 +55,7 @@ namespace Abp.Mqtt.Rpc.Test
             var success = 0;
             var failed = 0;
             int i = 0;
-            var client = _serviceProvider.GetRequiredService<RpcClient>();
+            var client = _serviceProvider.GetRequiredService<SimpleRpcClient>();
 
             using (var cts = new CancellationTokenSource(period))
             {
@@ -116,7 +116,7 @@ namespace Abp.Mqtt.Rpc.Test
         public async Task TestMethod1()
         {
             var packerId = "packer02";
-            var client = _serviceProvider.GetRequiredService<RpcClient>();
+            var client = _serviceProvider.GetRequiredService<SimpleRpcClient>();
             var beginDate = DateTime.Now;
             var pong = await client.ExecuteAsync<string>("Ping", "Ping", MqttQualityOfServiceLevel.ExactlyOnce, TimeSpan.FromMinutes(1), packerId);
             var endDate = DateTime.Now;
@@ -128,7 +128,7 @@ namespace Abp.Mqtt.Rpc.Test
         public async Task TestBoradcast()
         {
             var packerId = "packer02";
-            var client = _serviceProvider.GetRequiredService<RpcClient>();
+            var client = _serviceProvider.GetRequiredService<SimpleRpcClient>();
             var pong = await client.ExecuteBoradcastAsync<string>("Ping", Encoding.UTF8.GetBytes("Ping"), "application/bson", MqttQualityOfServiceLevel.AtLeastOnce, TimeSpan.FromMinutes(1),
                 2);
             Xunit.Assert.Equal("Pong", pong.ToString());

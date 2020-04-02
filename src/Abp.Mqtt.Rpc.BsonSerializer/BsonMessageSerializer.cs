@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using Abp.Mqtt.Rpc.Serialization;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Bson;
 
@@ -9,6 +10,8 @@ namespace Abp.Mqtt.Serialization
 {
     public class BsonMessageSerializer : IMessageSerializer
     {
+        public bool UTF8 => false;
+
         public string ContentType => "application/bson";
 
         public virtual byte[] Serialize(object payload)

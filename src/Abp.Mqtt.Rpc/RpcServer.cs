@@ -7,10 +7,15 @@ using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using Abp.Extensions;
+using Abp.Mqtt.Extensions;
 using Abp.Mqtt.Rpc.Internal;
-using Abp.Mqtt.Serialization;
+using Abp.Mqtt.Rpc.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 using MQTTnet;
+using MQTTnet.Client.Receiving;
+using MQTTnet.Diagnostics;
+using MQTTnet.Extensions;
 using MQTTnet.Extensions.ManagedClient;
 using MQTTnet.Protocol;
 
@@ -18,34 +23,26 @@ namespace Abp.Mqtt.Rpc
 {
     public class RpcServer : IRpcServer, IDisposable
     {
-        //private readonly RpcAwareApplicationMessageReceivedHandler _applicationMessageReceivedHandler;
-        private readonly CancellationTokenSource _exitSource = new CancellationTokenSource();
+        private readonly IMqttApplicationMessageReceivedHandler _handler;
+        private readonly IMqttNetChildLogger _logger;
         private readonly Dictionary<string, MethodInfo> _methods;
         private readonly IManagedMqttClient _mqttClient;
         private readonly ConcurrentDictionary<CancellationTokenSource, Task> _noIdCalls = new ConcurrentDictionary<CancellationTokenSource, Task>();
         private readonly ImmutableSortedDictionary<string, IMessageSerializer> _serializers;
         private readonly IServiceProvider _serviceProvider;
-        private readonly ConcurrentDictionary<string, TaskInfo> _waitingCalls = new ConcurrentDictionary<string, TaskInfo>();
+        private readonly CancellationTokenSource _stop = new CancellationTokenSource();
+        private readonly ConcurrentDictionary<string, CancellationTask> _waitingCalls = new ConcurrentDictionary<string, CancellationTask>();
 
-        private readonly DistributedMqttClient _distributedMqttClient;
-        private readonly AwareDistributeMessageReceivedHandler _awareDistributeMessageReceivedHandler;
-
-
-
-        public RpcServer(IManagedMqttClient mqttClient, MqttConfigurator configurator, IServiceProvider serviceProvider, DistributedMqttClient distributedMqttClient)
+        public RpcServer(IRpcServerOptions options, IServiceProvider serviceProvider, IMqttNetChildLogger logger)
         {
-            _mqttClient = mqttClient;
-            _serializers = configurator.MessageSerializers.ToImmutableSortedDictionary(serializer => serializer.ContentType, serializer => serializer);
+            _mqttClient = options.MqttClient;
+            _serializers = options.Serializers.ToImmutableSortedDictionary(serializer => serializer.ContentType, serializer => serializer);
             _serviceProvider = serviceProvider;
-            _methods = serviceProvider.GetServices<IRpcService>().SelectMany(s => s.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance))
+            _logger = logger.CreateChildLogger(nameof(RpcServer));
+            _methods = serviceProvider.GetServices<IRpcService>()
+                .SelectMany(s => s.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance))
                 .ToDictionary(mi => mi.Name, mi => mi);
-            /*
-             _applicationMessageReceivedHandler = new RpcAwareApplicationMessageReceivedHandler(
-                 _mqttClient.ApplicationMessageReceivedHandler,
-                 HandleApplicationMessageReceivedAsync);
-                 */
-            _distributedMqttClient = distributedMqttClient ?? throw new ArgumentNullException(nameof(mqttClient));
-            _awareDistributeMessageReceivedHandler = new AwareDistributeMessageReceivedHandler( HandleApplicationMessageReceivedAsync);
+            _handler = new MqttApplicationMessageReceivedHandlerDelegate(HandleApplicationMessageReceivedAsync);
             Start();
         }
 
@@ -58,55 +55,60 @@ namespace Abp.Mqtt.Rpc
         public void Dispose()
         {
             ForceStop();
-            _exitSource.Dispose();
+            _stop.Dispose();
         }
 
         public void Start()
         {
             if (Started) return;
             Started = true;
-            //_mqttClient.ApplicationMessageReceivedHandler = _applicationMessageReceivedHandler;
-
-            
+            _mqttClient.ApplicationMessageReceivedHandler = _mqttClient.ApplicationMessageReceivedHandler.Combine(_handler);
 
             InitSubscription().ConfigureAwait(false).GetAwaiter().GetResult();
         }
 
         public void Wait()
         {
-            _exitSource.Token.WaitHandle.WaitOne();
+            _stop.Token.WaitHandle.WaitOne();
         }
 
         public async Task Stop(TimeSpan timeout = default)
         {
-            var start = DateTime.Now;
-
             if (timeout == default) timeout = Timeout.InfiniteTimeSpan;
 
-            //_mqttClient.ApplicationMessageReceivedHandler = _applicationMessageReceivedHandler.OriginalHandler;
+            var calls = _waitingCalls.Values.Select(x => x.Task).Concat(_noIdCalls.Values).ToArray();
 
-            await _distributedMqttClient.UnSubscribeAsync(GetRequestTopic("packer01")).ConfigureAwait(false);
-
-            while (timeout == Timeout.InfiniteTimeSpan || DateTime.Now - start > timeout)
+            try
             {
-                if (_waitingCalls.IsEmpty && _noIdCalls.IsEmpty)
-                {
-                    Started = false;
-                    _exitSource.Cancel();
-                    return;
-                }
-
-                await Task.Delay(100); // TODO
+                _logger.Info($"Stopping {GetType().Name}, waiting {calls.Length} calls");
+                await Task.Run(async () => await Task.WhenAll(calls), new CancellationTokenSource(timeout).Token);
+                StopInternal();
+                _logger.Info($"{GetType().Name} has stopped.");
             }
-
-            ForceStop();
+            catch (TaskCanceledException ex)
+            {
+                _logger.Warning(ex, $"Stop {GetType().Name} timed out, trying to force stop ...");
+                ForceStop();
+            }
         }
 
         public void ForceStop()
         {
-            //_mqttClient.ApplicationMessageReceivedHandler = _applicationMessageReceivedHandler.OriginalHandler;
+            StopInternal();
+            _logger.Info($"{GetType().Name} has forced stop.");
+        }
 
-
+        private void StopInternal()
+        {
+            if (_mqttClient.ApplicationMessageReceivedHandler == _handler)
+            {
+                _mqttClient.ApplicationMessageReceivedHandler = null;
+            }
+            // ReSharper disable once SuspiciousTypeConversion.Global
+            else if (_mqttClient.ApplicationMessageProcessedHandler is CombinedMqttApplicationMessageReceivedHandler combined)
+            {
+                combined.TryRemove(_handler);
+            }
 
             foreach (var taskInfo in _waitingCalls.Values) taskInfo.CancellationTokenSource.Cancel();
             foreach (var cancellationTokenSource in _noIdCalls.Keys) cancellationTokenSource.Cancel();
@@ -115,31 +117,24 @@ namespace Abp.Mqtt.Rpc
             _noIdCalls.Clear();
 
             Started = false;
-            _exitSource.Cancel();
+            _stop.Cancel();
         }
 
         public async Task InitSubscription()
         {
-            // await _mqttClient.SubscribeAsync(GetRequestTopic(), MqttQualityOfServiceLevel.ExactlyOnce);
-            await _mqttClient.SubscribeAsync(GetRequestTopic("+"), MqttQualityOfServiceLevel.ExactlyOnce);
-
-            //await _distributedMqttClient.SubscribeAsync(GetRequestTopic("packer02"), MqttQualityOfServiceLevel.AtLeastOnce, _awareDistributeMessageReceivedHandler);
-
+            await _mqttClient.SubscribeAsync(GetRequestTopic("+", MqttQualityOfServiceLevel.AtMostOnce), MqttQualityOfServiceLevel.AtMostOnce);
+            await _mqttClient.SubscribeAsync(GetRequestTopic("+", MqttQualityOfServiceLevel.AtLeastOnce), MqttQualityOfServiceLevel.AtLeastOnce);
+            await _mqttClient.SubscribeAsync(GetRequestTopic("+", MqttQualityOfServiceLevel.ExactlyOnce), MqttQualityOfServiceLevel.ExactlyOnce);
         }
 
-        public async Task Subscription(string clientId)
+        private string GetResponseTopic(string target)
         {
-            await _distributedMqttClient.SubscribeAsync(GetRequestTopic(clientId), MqttQualityOfServiceLevel.AtLeastOnce, _awareDistributeMessageReceivedHandler);
+            return $"from/{ServerId}/rpc_response/to/{target}";
         }
 
-        private string GetResponseTopic(string source = null)
+        private string GetRequestTopic(string source, MqttQualityOfServiceLevel? qos)
         {
-            return $"from/{ServerId}/rpc_response" + (string.IsNullOrEmpty(source) ? "" : $"/to/{source}");
-        }
-
-        private string GetRequestTopic(string source = null)
-        {
-            return (string.IsNullOrEmpty(source) ? "" : $"from/{source}/") + $"rpc/to/{ServerId}";
+            return (source.IsNullOrEmpty() ? "" : $"from/{source}") + $"/rpc/to/{ServerId}/" + (qos == null ? "" : $"qos{(int) qos.Value}");
         }
 
         private string GetSource(string requestTopic)
@@ -151,40 +146,58 @@ namespace Abp.Mqtt.Rpc
 
         private async Task HandleApplicationMessageReceivedAsync(MqttApplicationMessageReceivedEventArgs eventArgs)
         {
+            if (!eventArgs.ApplicationMessage.Topic.Contains(GetRequestTopic(null, null))) return;
+
             var message = eventArgs.ApplicationMessage;
-            var methodName = message.UserProperties.First(up => up.Name.Equals("Method", StringComparison.OrdinalIgnoreCase)).Value;
-            var id = message.UserProperties.FirstOrDefault(up => up.Name.Equals("Id", StringComparison.OrdinalIgnoreCase))?.Value;
-            var timeout = message.UserProperties.FirstOrDefault(up => up.Name.Equals("Timeout", StringComparison.OrdinalIgnoreCase))?.Value;
+            var methodName = message.GetUserProperty("Method");
+            var id = message.GetUserProperty("Id");
+            var timeout = message.GetUserProperty<int?>("Timeout");
+            var broadcast = message.GetUserProperty<bool?>("Broadcast") ?? false;
+            var noResponse = message.GetUserProperty<bool?>("NoResponse") ?? false;
+
+            var messageBuilder = new MqttApplicationMessageBuilder()
+                .WithTopic(GetResponseTopic(GetSource(message.Topic)))
+                .WithUserProperty("Id", id)
+                .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce);
 
             if (!_methods.TryGetValue(methodName, out var method))
             {
-                if (!string.IsNullOrEmpty(id))
-                {
-                    var response = new MqttApplicationMessageBuilder()
-                        .WithTopic(GetResponseTopic(GetSource(message.Topic)))
-                        .WithUserProperty("Id", id)
-                        .WithUserProperty("Success", false.ToString())
-                        .WithUserProperty("Message", $"找不到方法 '{methodName}' 。")
-                        .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
-                        .Build();
-                    await _mqttClient.PublishAsync(response).ConfigureAwait(false);
-                }
+                if (string.IsNullOrEmpty(id) || noResponse) return;
+
+                var responseBuilder = messageBuilder
+                    .WithUserProperty("Success", false.ToString())
+                    .WithUserProperty("ErrorCode", "404")
+                    .WithUserProperty("ErrorMessage", $"Method '{methodName}' not found.");
+                if (broadcast) responseBuilder.WithUserProperty("Broadcast", true.ToString());
+                if (timeout > 0) responseBuilder.WithMessageExpiryInterval((uint) timeout.Value);
+                await _mqttClient.PublishAsync(responseBuilder.Build()).ConfigureAwait(false);
 
                 return;
             }
 
-            var parameterInfo = method.GetParameters().SingleOrDefault(); // TODO: More than one
+            var parameters = method.GetParameters();
 
             object[] args;
-            if (parameterInfo == null)
-                args = null;
-            else if (parameterInfo.ParameterType == typeof(byte[]))
-                args = new[] { (object)message.Payload };
-            else
-                args = new[] { DefaultSerializer.Deserialize(message.Payload, parameterInfo.ParameterType) };
+            switch (parameters.Length)
+            {
+                case 0:
+                    args = null;
+                    break;
+
+                case 1:
+                    var parameterInfo = parameters.First();
+                    args = parameterInfo.ParameterType == typeof(byte[])
+                        ? new[] {(object) message.Payload}
+                        : new[] {DefaultSerializer.Deserialize(message.Payload, parameterInfo.ParameterType)};
+                    break;
+
+                default:
+                    _logger.Error(new NotImplementedException(), "Multiple parameters resolving has not been supported yet, please use a key-value object.");
+                    return;
+            }
 
             using var serviceScope = _serviceProvider.CreateScope();
-            using var cts = string.IsNullOrEmpty(timeout) ? new CancellationTokenSource() : new CancellationTokenSource(int.Parse(timeout));
+            using var cts = timeout.HasValue ? new CancellationTokenSource(timeout.Value * 1000) : new CancellationTokenSource();
             try
             {
                 var rpcService = serviceScope.ServiceProvider.GetService(method.DeclaringType);
@@ -208,45 +221,53 @@ namespace Abp.Mqtt.Rpc
 
                 if (!string.IsNullOrEmpty(id))
                 {
-                    if (!_waitingCalls.TryAdd(id, new TaskInfo(task, cts))) throw new InvalidOperationException();
+                    if (!_waitingCalls.TryAdd(id, new CancellationTask(task, cts))) throw new InvalidOperationException();
                 }
                 else
                 {
                     _noIdCalls.TryAdd(cts, task);
                 }
 
-                var result = await task;
+                var result = await task.ConfigureAwait(false);
 
-                if (string.IsNullOrEmpty(id)) return;
+                if (noResponse) return;
 
-                var response = new MqttApplicationMessageBuilder()
+                var responseBuilder = new MqttApplicationMessageBuilder()
                     .WithTopic(GetResponseTopic(GetSource(message.Topic)))
                     .WithUserProperty("Id", id)
                     .WithUserProperty("Success", true.ToString())
                     .WithContentType(DefaultSerializer.ContentType)
                     .WithPayload(DefaultSerializer.Serialize(result))
-                    .WithAtLeastOnceQoS()
-                    .Build();
-                await _mqttClient.PublishAsync(response).ConfigureAwait(false);
+                    .WithAtLeastOnceQoS();
+                if (broadcast) responseBuilder.WithUserProperty("Broadcast", true.ToString());
+                if (timeout > 0) responseBuilder.WithMessageExpiryInterval((uint) timeout.Value);
+                await _mqttClient.PublishAsync(responseBuilder.Build()).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                if (string.IsNullOrEmpty(id)) return;
-                var response = new MqttApplicationMessageBuilder()
+                if (noResponse) return;
+
+                var responseBuilder = new MqttApplicationMessageBuilder()
                     .WithTopic(GetResponseTopic(GetSource(message.Topic)))
                     .WithUserProperty("Id", id)
                     .WithUserProperty("Success", false.ToString())
-                    .WithUserProperty("Message", ex.Message)
-                    .WithAtLeastOnceQoS()
-                    .Build();
-                await _mqttClient.PublishAsync(response).ConfigureAwait(false);
+                    .WithUserProperty("ErrorCode", ex.HResult.ToString())
+                    .WithUserProperty("ErrorMessage", ex.Message)
+                    .WithAtLeastOnceQoS();
+                if (broadcast) responseBuilder.WithUserProperty("Broadcast", true.ToString());
+                if (timeout > 0) responseBuilder.WithMessageExpiryInterval((uint) timeout.Value);
+                await _mqttClient.PublishAsync(responseBuilder.Build()).ConfigureAwait(false);
             }
             finally
             {
                 if (!string.IsNullOrEmpty(id))
+                {
                     _waitingCalls.TryRemove(id, out _);
+                }
                 else
+                {
                     _noIdCalls.TryRemove(cts, out _);
+                }
             }
         }
     }

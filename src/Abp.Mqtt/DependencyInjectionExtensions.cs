@@ -1,46 +1,72 @@
-using Castle.MicroKernel.Registration;
-using Castle.Windsor;
+using System;
+using Abp.Mqtt.Extensions;
 using Microsoft.Extensions.DependencyInjection;
+using MQTTnet;
+using MQTTnet.Adapter;
 using MQTTnet.Client;
 using MQTTnet.Client.Options;
+using MQTTnet.Diagnostics;
 using MQTTnet.Extensions.ManagedClient;
+using MQTTnet.Implementations;
 
 namespace Abp.Mqtt
 {
     public static class DependencyInjectionExtensions
     {
-        public static MqttConfigurator AddMqtt(this IServiceCollection serviceCollection, string mqttUri)
+        public static IServiceCollection AddMqttClient(this IServiceCollection serviceCollection, Action<MqttClientOptionsBuilder> configure, ServiceLifetime lifetime)
         {
-            var configurator = new MqttConfigurator(mqttUri);
-            serviceCollection.AddSingleton(configurator);
-            serviceCollection.AddSingleton(services => services.GetService<MqttConfigurator>().ClientOptions);
-            serviceCollection.AddSingleton(services => services.GetService<MqttConfigurator>().ManagedClientOptions);
-            serviceCollection.AddSingleton(services => services.GetService<MqttConfigurator>().CreateMqttClient().ConfigureAwait(false).GetAwaiter().GetResult());
-            serviceCollection.AddSingleton(services => services.GetService<MqttConfigurator>().CreateManagedMqttClient().ConfigureAwait(false).GetAwaiter().GetResult());
-            serviceCollection.AddSingleton<DistributedMqttClient>();
-            return configurator;
-        }
+            var builder = new MqttClientOptionsBuilder();
+            configure(builder);
+            serviceCollection.AddSingleton(builder.Build());
+            serviceCollection.Add(new ServiceDescriptor(typeof(IMqttClient), services =>
+            {
+                var client = new MqttFactory().CreateMqttClient();
+                client.ConnectAsync(services.GetRequiredService<IMqttClientOptions>()).ConfigureAwait(false).GetAwaiter().GetResult();
+                return client;
+            }, lifetime));
 
-        public static IServiceCollection AddDistributedMqttClient(this IServiceCollection serviceCollection)
-        {
             return serviceCollection;
         }
 
-        public static MqttConfigurator AddMqtt(this IWindsorContainer iocContainer, string mqttUri)
+        public static IServiceCollection AddMqttClient<T>(this IServiceCollection serviceCollection, Action<MqttClientOptionsBuilder> configure, ServiceLifetime lifetime)
+            where T : IMqttClient
         {
-            var configurator = new MqttConfigurator(mqttUri);
-            iocContainer.Register(Component.For<MqttConfigurator>().Instance(configurator));
-            iocContainer.Register(Component.For<IMqttClientOptions>().UsingFactoryMethod(kernel => kernel.Resolve<MqttConfigurator>().ClientOptions).LifestyleSingleton());
-            iocContainer.Register(Component.For<IManagedMqttClientOptions>().UsingFactoryMethod(kernel => kernel.Resolve<MqttConfigurator>().ManagedClientOptions)
-                .LifestyleSingleton());
-            iocContainer.Register(Component.For<IMqttClient>()
-                .UsingFactoryMethod(kernel => kernel.Resolve<MqttConfigurator>().CreateMqttClient().ConfigureAwait(false).GetAwaiter().GetResult())
-                .LifestyleSingleton());
-            iocContainer.Register(Component.For<IManagedMqttClient>()
-                .UsingFactoryMethod(kernel => kernel.Resolve<MqttConfigurator>().CreateManagedMqttClient().ConfigureAwait(false).GetAwaiter().GetResult())
-                .LifestyleSingleton());
-            iocContainer.Register(Component.For<DistributedMqttClient>().LifestyleSingleton());
-            return configurator;
+            throw new NotImplementedException();
+            var builder = new MqttClientOptionsBuilder();
+            configure(builder);
+            serviceCollection.AddSingleton(builder.Build<T>());
+            serviceCollection.Add(new ServiceDescriptor(typeof(T), lifetime));
+
+            return serviceCollection;
+        }
+
+        public static IServiceCollection AddManagedMqttClient(this IServiceCollection serviceCollection, Action<ManagedMqttClientOptionsBuilder> configure,
+            ServiceLifetime lifetime)
+        {
+            var builder = new ManagedMqttClientOptionsBuilder();
+            configure(builder);
+            serviceCollection.AddSingleton(builder.Build());
+            serviceCollection.Add(new ServiceDescriptor(typeof(IManagedMqttClient), services =>
+            {
+                var client = new MqttFactory().CreateManagedMqttClient();
+                client.StartAsync(services.GetRequiredService<IManagedMqttClientOptions>()).ConfigureAwait(false).GetAwaiter().GetResult();
+                return client;
+            }, lifetime));
+
+            return serviceCollection;
+        }
+
+        public static IServiceCollection AddManagedMqttClient<T>(this IServiceCollection serviceCollection, Action<ManagedMqttClientOptionsBuilder> configure,
+            ServiceLifetime lifetime)
+            where T : IManagedMqttClient
+        {
+            throw new NotImplementedException();
+            var builder = new ManagedMqttClientOptionsBuilder();
+            configure(builder);
+            serviceCollection.AddSingleton(builder.Build<T>());
+            serviceCollection.Add(new ServiceDescriptor(typeof(T), lifetime));
+
+            return serviceCollection;
         }
     }
 }

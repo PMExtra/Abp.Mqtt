@@ -30,24 +30,6 @@ namespace Abp.Mqtt.Service.Test
 
         public static IServiceCollection ConfigureServices(IServiceCollection services)
         {
-            services
-                .AddMqtt(mqttService)
-                .ConfigureSerializers(serializers =>
-                {
-                    serializers.Insert(0, new BsonMessageSerializer());
-                })
-                .ConfigureClient(builder =>
-                {
-                    builder.WithClientId("packer02");
-                    builder.WithProtocolVersion(MqttProtocolVersion.V500);
-                })
-                .ConfigureManagedClient(builder => { builder.WithAutoReconnectDelay(TimeSpan.FromSeconds(5)); });
-
-
-            services
-                .AddMqttRpcServer<RpcServer>()
-                .AddServices(typeof(Program).Assembly);
-
             return services;
         }
     }

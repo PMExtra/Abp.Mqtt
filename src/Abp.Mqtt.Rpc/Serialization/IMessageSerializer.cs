@@ -1,9 +1,11 @@
 using System;
 
-namespace Abp.Mqtt.Serialization
+namespace Abp.Mqtt.Rpc.Serialization
 {
     public interface IMessageSerializer
     {
+        bool UTF8 { get; }
+
         string ContentType { get; }
 
         byte[] Serialize(object payload);
