@@ -3,7 +3,7 @@ using System.Linq;
 using System.Text;
 using Newtonsoft.Json;
 
-namespace Abp.Mqtt.Rpc.Serialization
+namespace Abp.Mqtt.Serialization
 {
     public class JsonMessageSerializer : IMessageSerializer
     {

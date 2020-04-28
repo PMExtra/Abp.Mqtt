@@ -1,6 +1,6 @@
 using System;
 
-namespace Abp.Mqtt.Rpc.Serialization
+namespace Abp.Mqtt.Serialization
 {
     public interface IMessageSerializer
     {

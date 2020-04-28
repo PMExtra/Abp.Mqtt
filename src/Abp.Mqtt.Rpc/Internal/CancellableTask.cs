@@ -3,9 +3,9 @@ using System.Threading.Tasks;
 
 namespace Abp.Mqtt.Rpc.Internal
 {
-    internal class CancellationTask
+    internal class CancellableTask
     {
-        public CancellationTask(Task task, CancellationTokenSource cancellationTokenSource)
+        public CancellableTask(Task task, CancellationTokenSource cancellationTokenSource)
         {
             Task = task;
             CancellationTokenSource = cancellationTokenSource;

@@ -1,49 +1,104 @@
 using System;
-using Abp.Dependency;
-using MQTTnet.Extensions.ManagedClient;
+using Abp.Mqtt.Contexts;
+using Microsoft.Extensions.DependencyInjection;
+using MQTTnet.Extensions;
 using Xunit;
 
 namespace Abp.Mqtt.Tests
 {
-    public class ManagedMqttClientTest : IDisposable
+    public class ManagedMqttClientTest
     {
-        public ManagedMqttClientTest()
+        public class MqttContextA : MqttContext
         {
-            _iocManagerA = new IocManager();
-            _iocManagerB = new IocManager();
-
-            _iocManagerA.IocContainer.AddMqtt(MqttServer);
-            _iocManagerB.IocContainer.AddMqtt(MqttServer);
-
-            _clientA = _iocManagerA.Resolve<IManagedMqttClient>();
-            _clientB = _iocManagerB.Resolve<IManagedMqttClient>();
+            public MqttContextA(IMqttContextOptions<MqttContextA> options) : base(options)
+            {
+            }
         }
 
-        public virtual void Dispose()
+        public class MqttContextB : MqttContextA
         {
-            _iocManagerA.Dispose();
-            _iocManagerB.Dispose();
+            public MqttContextB(IMqttContextOptions<MqttContextB> options) : base(options)
+            {
+            }
         }
 
-        private const string MqttServer = "mqtt://test01:123@192.168.102.101";
+        public class ManagedMqttContextA : ManagedMqttContext
+        {
+            public ManagedMqttContextA(IManagedMqttContextOptions<ManagedMqttContextA> options) : base(options)
+            {
+            }
+        }
 
-        private readonly IIocManager _iocManagerA;
-        private readonly IIocManager _iocManagerB;
-        private readonly IManagedMqttClient _clientA;
-        private readonly IManagedMqttClient _clientB;
+        public class ManagedMqttContextB : ManagedMqttContextA
+        {
+            public ManagedMqttContextB(IManagedMqttContextOptions<ManagedMqttContextB> options) : base(options)
+            {
+            }
+        }
+
+        private const string MqttServer = "mqtt://qomo:qomo123@photon";
 
         [Fact]
         public void TestConnected()
         {
-            Assert.True(_clientA.IsConnected);
-            Assert.True(_clientB.IsConnected);
+            using var services = new ServiceCollection()
+                .AddMqttClient<MqttContextA>(builder =>
+                {
+                    builder
+                        .WithConnectionUri(MqttServer)
+                        .WithClientId("ClientA");
+                })
+                .AddMqttClient<MqttContextB>(builder =>
+                {
+                    builder.WithConnectionUri(MqttServer)
+                        .WithClientId("ClientB");
+                })
+                .BuildServiceProvider();
+
+            var clientA = services.GetRequiredService<MqttContextA>().MqttClient;
+            var clientB = services.GetRequiredService<MqttContextB>().MqttClient;
+
+            Assert.True(clientA.IsConnected);
+            Assert.Equal("ClientA", clientA.Options.ClientId);
+            Assert.True(clientB.IsConnected);
+            Assert.Equal("ClientB", clientB.Options.ClientId);
         }
 
         [Fact]
         public void TestStarted()
         {
-            Assert.True(_clientA.IsStarted);
-            Assert.True(_clientB.IsStarted);
+            using var services = new ServiceCollection()
+                .AddManagedMqttClient<ManagedMqttContextA>(builder =>
+                {
+                    builder
+                        .WithClientOptions(builder2 =>
+                        {
+                            builder2
+                                .WithConnectionUri(MqttServer)
+                                .WithClientId("ClientA");
+                        })
+                        .WithAutoReconnectDelay(TimeSpan.FromSeconds(5));
+                })
+                .AddManagedMqttClient<ManagedMqttContextB>(builder =>
+                {
+                    builder
+                        .WithClientOptions(builder2 =>
+                        {
+                            builder2
+                                .WithConnectionUri(MqttServer)
+                                .WithClientId("ClientB");
+                        })
+                        .WithAutoReconnectDelay(TimeSpan.FromSeconds(5));
+                })
+                .BuildServiceProvider();
+
+            var clientA = services.GetRequiredService<ManagedMqttContextA>().ManagedMqttClient;
+            var clientB = services.GetRequiredService<ManagedMqttContextB>().ManagedMqttClient;
+
+            Assert.True(clientA.IsStarted);
+            Assert.Equal("ClientA", clientA.Options.ClientOptions.ClientId);
+            Assert.True(clientB.IsStarted);
+            Assert.Equal("ClientB", clientB.Options.ClientOptions.ClientId);
         }
     }
 }

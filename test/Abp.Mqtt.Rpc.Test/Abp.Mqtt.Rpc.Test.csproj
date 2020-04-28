@@ -19,7 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Abp.Mqtt.Rpc.BsonSerializer\Abp.Mqtt.Rpc.BsonSerializer.csproj" />
+    <ProjectReference Include="..\..\src\Abp.Mqtt.BsonSerializer\Abp.Mqtt.BsonSerializer.csproj" />
     <ProjectReference Include="..\..\src\Abp.Mqtt.Rpc\Abp.Mqtt.Rpc.csproj" />
   </ItemGroup>
 
